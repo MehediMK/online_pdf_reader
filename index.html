@@ -22,15 +22,33 @@
     <input type="file" id="fileInput" accept="application/pdf">
     <button id="loadBtn" class="btn">Load PDF</button>
     <button id="prevBtn" class="btn secondary">Prev</button>
+    
+    <!-- 🔢 Page number input -->
+    <input type="number" id="pageNumberInput" min="1" style="width:60px;" placeholder="Pg#" />
+    <span id="totalPages"></span>
+
     <button id="nextBtn" class="btn secondary">Next</button>
-    <button id="zoomInBtn" class="btn zoom">🔍 Zoom In</button>
-    <button id="zoomOutBtn" class="btn zoom">🔎 Zoom Out</button>
+
+    <button id="zoomInBtn" class="btn zoom">🔍+</button>
+    <button id="zoomOutBtn" class="btn zoom">🔎−</button>
     <span id="status">No file selected.</span>
   </div>
 
-<main class="flipbook-container">
-    <div id="flipbook" class="shadow"></div>
-  </main>
+  <div class="pdf-wrapper">
+    <!-- 📑 Sidebar for thumbnails & outline -->
+    <aside class="sidebar">
+      <h3>Thumbnails</h3>
+      <div id="thumbnailContainer" class="thumbnails"></div>
+
+      <h3>Table of Contents</h3>
+      <ul id="outlineContainer" class="outline"></ul>
+    </aside>
+
+    <!-- 📖 Main Flipbook -->
+    <main class="flipbook-container">
+      <div id="flipbook" class="shadow"></div>
+    </main>
+  </div>
 
   <footer>
     <p>Built with ❤️ using <strong>PDF.js</strong> & <strong>Turn.js</strong></p>

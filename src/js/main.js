@@ -13,62 +13,86 @@ window.addEventListener('load', () => {
   const nextBtn = document.getElementById('nextBtn');
   const zoomInBtn = document.getElementById('zoomInBtn');
   const zoomOutBtn = document.getElementById('zoomOutBtn');
+  const pageNumberInput = document.getElementById('pageNumberInput');
+  const totalPages = document.getElementById('totalPages');
   const flipbookContainer = document.querySelector('.flipbook-container');
+  const thumbnailContainer = document.getElementById('thumbnailContainer');
+  const outlineContainer = document.getElementById('outlineContainer');
   const flipbook = $('#flipbook');
 
-  let currentZoom = 1; // 🔍 Default zoom level
+  let pdfDoc = null;
+  let currentZoom = 1;
   const minZoom = 0.5;
   const maxZoom = 2.5;
   const zoomStep = 0.1;
-
-  // 🧭 Pan variables
-  let isDragging = false;
-  let startX, startY;
-  let translateX = 0;
-  let translateY = 0;
+  let isDragging = false, startX, startY, translateX = 0, translateY = 0;
 
   function setStatus(msg) {
     status.textContent = msg;
   }
 
-  // 🖼️ Render a single PDF page to image
-  async function renderPage(pdf, pageNumber) {
+  // 🖼️ Render PDF page to image (used for both pages & thumbnails)
+  async function renderPage(pdf, pageNumber, scale = 1.5) {
     const page = await pdf.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1.5 });
+    const viewport = page.getViewport({ scale });
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-
     await page.render({ canvasContext: ctx, viewport }).promise;
 
     const img = document.createElement('img');
     img.src = canvas.toDataURL('image/jpeg', 0.9);
-
-    const pageDiv = document.createElement('div');
-    pageDiv.className = 'page';
-    pageDiv.appendChild(img);
-
-    return pageDiv;
+    return img;
   }
 
-  // 📖 Load and render PDF into flipbook
+  // 📖 Load PDF
   async function loadPDF(arrayBuffer) {
     try {
       setStatus('📂 Loading PDF...');
-      const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      totalPages.textContent = `/ ${pdfDoc.numPages} pages`;
+
       setStatus(`📄 Rendering ${pdfDoc.numPages} pages...`);
-
       flipbook.html('');
+      thumbnailContainer.innerHTML = '';
+      outlineContainer.innerHTML = '';
 
+      // Generate pages and thumbnails
       for (let i = 1; i <= pdfDoc.numPages; i++) {
-        const pageDiv = await renderPage(pdfDoc, i);
+        const pageImg = await renderPage(pdfDoc, i);
+        const pageDiv = document.createElement('div');
+        pageDiv.className = 'page';
+        pageDiv.appendChild(pageImg);
         flipbook.append(pageDiv);
+
+        // Thumbnails
+        const thumbImg = await renderPage(pdfDoc, i, 0.2);
+        thumbImg.className = 'thumbnail';
+        thumbImg.title = `Page ${i}`;
+        thumbImg.addEventListener('click', () => flipbook.turn('page', i));
+        thumbnailContainer.appendChild(thumbImg);
+
         setStatus(`Rendering page ${i} of ${pdfDoc.numPages}...`);
       }
 
-      // Delay slightly before initializing Turn.js
+      // Render Outline (Bookmarks)
+      const outline = await pdfDoc.getOutline();
+      if (outline) {
+        outline.forEach((item) => {
+          const li = document.createElement('li');
+          li.textContent = item.title;
+          li.addEventListener('click', async () => {
+            const dest = await pdfDoc.getDestination(item.dest);
+            const pageIndex = pdfDoc.getPageIndex(dest[0]);
+            flipbook.turn('page', pageIndex + 1);
+          });
+          outlineContainer.appendChild(li);
+        });
+      }
+
+      // Initialize Flipbook
       setTimeout(() => {
         flipbook.turn({
           width: 900,
@@ -81,7 +105,7 @@ window.addEventListener('load', () => {
           duration: 800,
         });
         setStatus(`✅ Loaded ${pdfDoc.numPages} pages.`);
-      }, 300);
+      }, 400);
 
     } catch (err) {
       console.error(err);
@@ -89,7 +113,7 @@ window.addEventListener('load', () => {
     }
   }
 
-  // 🎯 Load PDF Button
+  // 📥 Load Button
   loadBtn.addEventListener('click', () => {
     const file = fileInput.files[0];
     if (!file) {
@@ -101,11 +125,21 @@ window.addEventListener('load', () => {
     reader.readAsArrayBuffer(file);
   });
 
-  // ⏪/⏩ Navigation
+  // ⏮️/⏭️ Buttons
   prevBtn.addEventListener('click', () => flipbook.turn('previous'));
   nextBtn.addEventListener('click', () => flipbook.turn('next'));
 
-  // 🔍 Apply Zoom + Pan
+  // 🔢 Jump to page number
+  pageNumberInput.addEventListener('change', () => {
+    const pageNum = parseInt(pageNumberInput.value);
+    if (pageNum >= 1 && pageNum <= pdfDoc.numPages) {
+      flipbook.turn('page', pageNum);
+    } else {
+      setStatus('⚠️ Invalid page number.');
+    }
+  });
+
+  // 🔍 Zoom
   function applyTransform() {
     flipbook.css({
       transform: `translate(${translateX}px, ${translateY}px) scale(${currentZoom})`,
@@ -120,14 +154,11 @@ window.addEventListener('load', () => {
     applyTransform();
   }
 
-  // 🔍 Zoom In/Out Buttons
   zoomInBtn.addEventListener('click', () => {
     if (currentZoom < maxZoom) {
       currentZoom += zoomStep;
       applyTransform();
       setStatus(`Zoom: ${(currentZoom * 100).toFixed(0)}%`);
-    } else {
-      setStatus('🔎 Maximum zoom reached.');
     }
   });
 
@@ -137,19 +168,16 @@ window.addEventListener('load', () => {
       if (currentZoom <= 1) resetPan();
       applyTransform();
       setStatus(`Zoom: ${(currentZoom * 100).toFixed(0)}%`);
-    } else {
-      setStatus('🔎 Minimum zoom reached.');
     }
   });
 
   // 🖱️ Ctrl + Scroll Zoom
   flipbookContainer.addEventListener('wheel', (e) => {
-    if (!e.ctrlKey) return; // only zoom if Ctrl pressed
+    if (!e.ctrlKey) return;
     e.preventDefault();
 
-    if (e.deltaY < 0 && currentZoom < maxZoom) {
-      currentZoom += zoomStep;
-    } else if (e.deltaY > 0 && currentZoom > minZoom) {
+    if (e.deltaY < 0 && currentZoom < maxZoom) currentZoom += zoomStep;
+    else if (e.deltaY > 0 && currentZoom > minZoom) {
       currentZoom -= zoomStep;
       if (currentZoom <= 1) resetPan();
     }
@@ -160,7 +188,7 @@ window.addEventListener('load', () => {
 
   // 🖐️ Drag-to-Pan
   flipbookContainer.addEventListener('mousedown', (e) => {
-    if (currentZoom <= 1) return; // only when zoomed
+    if (currentZoom <= 1) return;
     isDragging = true;
     startX = e.clientX - translateX;
     startY = e.clientY - translateY;
@@ -174,13 +202,10 @@ window.addEventListener('load', () => {
     applyTransform();
   });
 
-  flipbookContainer.addEventListener('mouseup', () => {
-    isDragging = false;
-    flipbookContainer.style.cursor = 'default';
-  });
-
-  flipbookContainer.addEventListener('mouseleave', () => {
-    isDragging = false;
-    flipbookContainer.style.cursor = 'default';
-  });
+  ['mouseup', 'mouseleave'].forEach(evt =>
+    flipbookContainer.addEventListener(evt, () => {
+      isDragging = false;
+      flipbookContainer.style.cursor = 'default';
+    })
+  );
 });
