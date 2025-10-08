@@ -194,3 +194,8 @@ footer {
 .outline li:hover {
   color: #007bff;
 }
+
+.annotationLayer {
+  pointer-events: auto;
+  cursor: crosshair;
+}
