@@ -10,16 +10,22 @@ window.addEventListener('load', () => {
   const loadBtn = document.getElementById('loadBtn');
   const status = document.getElementById('status');
   const prevBtn = document.getElementById('prevBtn');
-  const nextBtn = document.getElementById('nextBtn');  
+  const nextBtn = document.getElementById('nextBtn');
   const zoomInBtn = document.getElementById('zoomInBtn');
   const zoomOutBtn = document.getElementById('zoomOutBtn');
+  const flipbookContainer = document.querySelector('.flipbook-container');
   const flipbook = $('#flipbook');
 
   let currentZoom = 1; // 🔍 Default zoom level
   const minZoom = 0.5;
-  const maxZoom = 2.0;
+  const maxZoom = 2.5;
   const zoomStep = 0.1;
 
+  // 🧭 Pan variables
+  let isDragging = false;
+  let startX, startY;
+  let translateX = 0;
+  let translateY = 0;
 
   function setStatus(msg) {
     status.textContent = msg;
@@ -83,7 +89,7 @@ window.addEventListener('load', () => {
     }
   }
 
-  // 🎯 Button Actions
+  // 🎯 Load PDF Button
   loadBtn.addEventListener('click', () => {
     const file = fileInput.files[0];
     if (!file) {
@@ -95,24 +101,31 @@ window.addEventListener('load', () => {
     reader.readAsArrayBuffer(file);
   });
 
+  // ⏪/⏩ Navigation
   prevBtn.addEventListener('click', () => flipbook.turn('previous'));
   nextBtn.addEventListener('click', () => flipbook.turn('next'));
 
-  // 🔍 Zoom In / Out Controls
-  function applyZoom() {
-    const scale = currentZoom;
+  // 🔍 Apply Zoom + Pan
+  function applyTransform() {
     flipbook.css({
-      transform: `scale(${scale})`,
+      transform: `translate(${translateX}px, ${translateY}px) scale(${currentZoom})`,
       transformOrigin: 'center center',
-      transition: 'transform 0.3s ease',
+      transition: 'transform 0.1s ease',
     });
-    setStatus(`🔍 Zoom: ${(scale * 100).toFixed(0)}%`);
   }
 
+  function resetPan() {
+    translateX = 0;
+    translateY = 0;
+    applyTransform();
+  }
+
+  // 🔍 Zoom In/Out Buttons
   zoomInBtn.addEventListener('click', () => {
     if (currentZoom < maxZoom) {
       currentZoom += zoomStep;
-      applyZoom();
+      applyTransform();
+      setStatus(`Zoom: ${(currentZoom * 100).toFixed(0)}%`);
     } else {
       setStatus('🔎 Maximum zoom reached.');
     }
@@ -121,10 +134,53 @@ window.addEventListener('load', () => {
   zoomOutBtn.addEventListener('click', () => {
     if (currentZoom > minZoom) {
       currentZoom -= zoomStep;
-      applyZoom();
+      if (currentZoom <= 1) resetPan();
+      applyTransform();
+      setStatus(`Zoom: ${(currentZoom * 100).toFixed(0)}%`);
     } else {
       setStatus('🔎 Minimum zoom reached.');
     }
   });
 
+  // 🖱️ Ctrl + Scroll Zoom
+  flipbookContainer.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey) return; // only zoom if Ctrl pressed
+    e.preventDefault();
+
+    if (e.deltaY < 0 && currentZoom < maxZoom) {
+      currentZoom += zoomStep;
+    } else if (e.deltaY > 0 && currentZoom > minZoom) {
+      currentZoom -= zoomStep;
+      if (currentZoom <= 1) resetPan();
+    }
+
+    applyTransform();
+    setStatus(`Zoom: ${(currentZoom * 100).toFixed(0)}%`);
+  });
+
+  // 🖐️ Drag-to-Pan
+  flipbookContainer.addEventListener('mousedown', (e) => {
+    if (currentZoom <= 1) return; // only when zoomed
+    isDragging = true;
+    startX = e.clientX - translateX;
+    startY = e.clientY - translateY;
+    flipbookContainer.style.cursor = 'grabbing';
+  });
+
+  flipbookContainer.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    translateX = e.clientX - startX;
+    translateY = e.clientY - startY;
+    applyTransform();
+  });
+
+  flipbookContainer.addEventListener('mouseup', () => {
+    isDragging = false;
+    flipbookContainer.style.cursor = 'default';
+  });
+
+  flipbookContainer.addEventListener('mouseleave', () => {
+    isDragging = false;
+    flipbookContainer.style.cursor = 'default';
+  });
 });
