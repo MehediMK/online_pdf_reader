@@ -72,6 +72,17 @@ input[type="file"] {
 }
 
 /* ====== Flipbook ====== */
+.btn.zoom {
+  background: #28a745;
+  color: #fff;
+}
+
+.btn.zoom:hover {
+  background: #218838;
+}
+
+
+/* ====== Flipbook ====== */
 .flipbook-container {
   width: 900px;
   height: 600px;
