@@ -10,8 +10,16 @@ window.addEventListener('load', () => {
   const loadBtn = document.getElementById('loadBtn');
   const status = document.getElementById('status');
   const prevBtn = document.getElementById('prevBtn');
-  const nextBtn = document.getElementById('nextBtn');
+  const nextBtn = document.getElementById('nextBtn');  
+  const zoomInBtn = document.getElementById('zoomInBtn');
+  const zoomOutBtn = document.getElementById('zoomOutBtn');
   const flipbook = $('#flipbook');
+
+  let currentZoom = 1; // 🔍 Default zoom level
+  const minZoom = 0.5;
+  const maxZoom = 2.0;
+  const zoomStep = 0.1;
+
 
   function setStatus(msg) {
     status.textContent = msg;
@@ -60,6 +68,7 @@ window.addEventListener('load', () => {
           width: 900,
           height: 600,
           autoCenter: true,
+          acceleration: true,
           display: 'double',
           elevation: 50,
           gradients: true,
@@ -88,4 +97,34 @@ window.addEventListener('load', () => {
 
   prevBtn.addEventListener('click', () => flipbook.turn('previous'));
   nextBtn.addEventListener('click', () => flipbook.turn('next'));
+
+  // 🔍 Zoom In / Out Controls
+  function applyZoom() {
+    const scale = currentZoom;
+    flipbook.css({
+      transform: `scale(${scale})`,
+      transformOrigin: 'center center',
+      transition: 'transform 0.3s ease',
+    });
+    setStatus(`🔍 Zoom: ${(scale * 100).toFixed(0)}%`);
+  }
+
+  zoomInBtn.addEventListener('click', () => {
+    if (currentZoom < maxZoom) {
+      currentZoom += zoomStep;
+      applyZoom();
+    } else {
+      setStatus('🔎 Maximum zoom reached.');
+    }
+  });
+
+  zoomOutBtn.addEventListener('click', () => {
+    if (currentZoom > minZoom) {
+      currentZoom -= zoomStep;
+      applyZoom();
+    } else {
+      setStatus('🔎 Minimum zoom reached.');
+    }
+  });
+
 });
