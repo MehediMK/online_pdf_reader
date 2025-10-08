@@ -26,6 +26,7 @@ window.addEventListener('load', () => {
   const maxZoom = 2.5;
   const zoomStep = 0.1;
   let isDragging = false, startX, startY, translateX = 0, translateY = 0;
+  let isSinglePage = false;
 
   function setStatus(msg) {
     status.textContent = msg;
@@ -36,6 +37,7 @@ window.addEventListener('load', () => {
     const page = await pdf.getPage(pageNumber);
     const viewport = page.getViewport({ scale });
 
+    // Canvas for image
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = viewport.width;
@@ -66,6 +68,9 @@ window.addEventListener('load', () => {
         pageDiv.className = 'page';
         pageDiv.appendChild(pageImg);
         flipbook.append(pageDiv);
+
+        // Annotation Layer (Drawing / Highlighting)
+        addAnnotationLayer(pageDiv)
 
         // Thumbnails
         const thumbImg = await renderPage(pdfDoc, i, 0.2);
@@ -112,6 +117,29 @@ window.addEventListener('load', () => {
       setStatus('❌ Failed to load PDF.');
     }
   }
+
+    // Annotation Layer (Drawing / Highlighting)
+    function addAnnotationLayer(pageDiv) {
+        const canvas = document.createElement('canvas');
+        canvas.className = 'annotationLayer';
+        canvas.width = pageDiv.clientWidth;
+        canvas.height = pageDiv.clientHeight;
+        canvas.style.position = 'absolute';
+        canvas.style.top = '0';
+        canvas.style.left = '0';
+        canvas.style.pointerEvents = 'auto';
+        pageDiv.appendChild(canvas);
+
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+
+        canvas.addEventListener('mousedown', (e) => { drawing = true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY); });
+        canvas.addEventListener('mousemove', (e) => { if(drawing) { ctx.lineTo(e.offsetX, e.offsetY); ctx.strokeStyle='red'; ctx.lineWidth=2; ctx.stroke(); }});
+        canvas.addEventListener('mouseup', () => drawing = false);
+        canvas.addEventListener('mouseleave', () => drawing = false);
+    }
+
+
 
   // 📥 Load Button
   loadBtn.addEventListener('click', () => {
@@ -243,8 +271,6 @@ fitWidthBtn.addEventListener('click', fitToWidth);
 fitPageBtn.addEventListener('click', fitToPage);
 
 // 📖 Toggle Single / Double Page View
-let isSinglePage = false;
-
 toggleViewBtn.addEventListener('click', () => {
   isSinglePage = !isSinglePage;
   const displayMode = isSinglePage ? 'single' : 'double';
