@@ -119,7 +119,57 @@ window.addEventListener('load', () => {
   }
 
     // Annotation Layer (Drawing / Highlighting)
-    function addAnnotationLayer(pageDiv) {
+
+    const toolFreehandBtn = document.getElementById('toolFreehand');
+    const toolHighlightBtn = document.getElementById('toolHighlight');
+    const colorPicker = document.getElementById('colorPicker');
+
+    toolFreehandBtn.addEventListener('click', () => {
+    $('.page').each((_, pageDiv) => pageDiv.querySelector('.annotationLayer').setTool('freehand'));
+    });
+
+    toolHighlightBtn.addEventListener('click', () => {
+    $('.page').each((_, pageDiv) => pageDiv.querySelector('.annotationLayer').setTool('highlight'));
+    });
+
+    colorPicker.addEventListener('change', (e) => {
+    const color = e.target.value;
+    $('.page').each((_, pageDiv) => pageDiv.querySelector('.annotationLayer').setColor(color));
+    });
+
+    document.getElementById('saveAnnotations').addEventListener('click', () => {
+    const saved = JSON.stringify(window.annotations || {});
+    localStorage.setItem('pdfAnnotations', saved);
+    setStatus('✅ Annotations saved');
+    });
+
+    document.getElementById('loadAnnotations').addEventListener('click', () => {
+    const loaded = localStorage.getItem('pdfAnnotations');
+    if (loaded) {
+        Object.values($('.page')).forEach(pageDiv => {
+        const layer = pageDiv.querySelector('.annotationLayer');
+        if(layer && layer.loadAnnotations) layer.loadAnnotations(loaded);
+        });
+        setStatus('✅ Annotations loaded');
+    }
+    });
+
+    const annotateBtn = document.getElementById('annotateBtn');
+        let annotationsActive = false;
+
+        annotateBtn.addEventListener('click', () => {
+        annotationsActive = !annotationsActive; // toggle on/off
+        annotateBtn.textContent = annotationsActive ? '🛑 Stop Annotation' : '✏️ Annotate';
+        setStatus(annotationsActive ? '✏️ Annotation mode ON' : '✏️ Annotation mode OFF');
+
+        // Enable or disable pointer events for all annotation canvases
+        document.querySelectorAll('.annotationLayer').forEach(canvas => {
+            canvas.style.pointerEvents = annotationsActive ? 'auto' : 'none';
+        });
+    });
+
+
+    function addAnnotationLayer(pageDiv, pageNumber) {
         const canvas = document.createElement('canvas');
         canvas.className = 'annotationLayer';
         canvas.width = pageDiv.clientWidth;
@@ -127,19 +177,116 @@ window.addEventListener('load', () => {
         canvas.style.position = 'absolute';
         canvas.style.top = '0';
         canvas.style.left = '0';
-        canvas.style.pointerEvents = 'auto';
+        canvas.style.pointerEvents = 'none';
         pageDiv.appendChild(canvas);
 
         const ctx = canvas.getContext('2d');
         let drawing = false;
+        let startX = 0, startY = 0;
+        let tool = 'freehand'; // 'freehand' or 'highlight'
+        let color = '#ff0000';
+        let lineWidth = 2;
 
-        canvas.addEventListener('mousedown', (e) => { drawing = true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY); });
-        canvas.addEventListener('mousemove', (e) => { if(drawing) { ctx.lineTo(e.offsetX, e.offsetY); ctx.strokeStyle='red'; ctx.lineWidth=2; ctx.stroke(); }});
-        canvas.addEventListener('mouseup', () => drawing = false);
-        canvas.addEventListener('mouseleave', () => drawing = false);
+        // Store annotations for saving
+        if (!window.annotations) window.annotations = {};
+        if (!window.annotations[pageNumber]) window.annotations[pageNumber] = [];
+
+        // Draw from saved annotations
+        function redrawAnnotations() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const annots = window.annotations[pageNumber];
+            annots.forEach(a => {
+            ctx.strokeStyle = a.color;
+            ctx.fillStyle = a.color;
+            ctx.lineWidth = a.lineWidth;
+            if(a.type === 'freehand') {
+                ctx.beginPath();
+                ctx.moveTo(a.points[0].x, a.points[0].y);
+                a.points.forEach(p => ctx.lineTo(p.x, p.y));
+                ctx.stroke();
+            } else if(a.type === 'highlight') {
+                ctx.fillRect(a.x, a.y, a.width, a.height);
+            }
+            });
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            drawing = true;
+            startX = e.offsetX;
+            startY = e.offsetY;
+            if(tool === 'freehand') {
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            window.currentPoints = [{x: startX, y: startY}];
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if(!drawing) return;
+            const x = e.offsetX;
+            const y = e.offsetY;
+
+            if(tool === 'freehand') {
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
+            window.currentPoints.push({x, y});
+            } else if(tool === 'highlight') {
+            redrawAnnotations();
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.3;
+            ctx.fillRect(startX, startY, x - startX, y - startY);
+            ctx.globalAlpha = 1;
+            }
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            drawing = false;
+            const x = e.offsetX;
+            const y = e.offsetY;
+
+            if(tool === 'freehand') {
+            window.annotations[pageNumber].push({
+                type: 'freehand',
+                color,
+                lineWidth,
+                points: window.currentPoints
+            });
+            window.currentPoints = [];
+            } else if(tool === 'highlight') {
+            window.annotations[pageNumber].push({
+                type: 'highlight',
+                color,
+                x: Math.min(startX, x),
+                y: Math.min(startY, y),
+                width: Math.abs(x - startX),
+                height: Math.abs(y - startY)
+            });
+            redrawAnnotations();
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            drawing = false;
+            if(tool === 'freehand') window.currentPoints = [];
+        });
+
+        // Tool switch & color picker (you can link these to UI buttons)
+        canvas.setTool = (newTool) => { tool = newTool; };
+        canvas.setColor = (newColor) => { color = newColor; };
+
+        // Save annotations to JSON
+        canvas.saveAnnotations = () => {
+            return JSON.stringify(window.annotations);
+        };
+
+        // Load annotations from JSON
+        canvas.loadAnnotations = (json) => {
+            window.annotations = JSON.parse(json);
+            redrawAnnotations();
+        };
     }
-
-
 
   // 📥 Load Button
   loadBtn.addEventListener('click', () => {
