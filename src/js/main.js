@@ -208,4 +208,56 @@ window.addEventListener('load', () => {
       flipbookContainer.style.cursor = 'default';
     })
   );
+
+// === Viewing Options ===
+
+// 🧩 Fit to Width & Fit to Page
+const fitWidthBtn = document.getElementById('fitWidthBtn');
+const fitPageBtn = document.getElementById('fitPageBtn');
+const toggleViewBtn = document.getElementById('toggleViewBtn');
+const nightModeBtn = document.getElementById('nightModeBtn');
+
+function fitToWidth() {
+  const container = flipbookContainer.getBoundingClientRect();
+  const book = flipbook[0].getBoundingClientRect();
+  const newZoom = container.width / book.width;
+  currentZoom = Math.min(maxZoom, newZoom);
+  resetPan();
+  applyTransform();
+  setStatus('↔ Fit to Width');
+}
+
+function fitToPage() {
+  const container = flipbookContainer.getBoundingClientRect();
+  const book = flipbook[0].getBoundingClientRect();
+  const zoomX = container.width / book.width;
+  const zoomY = container.height / book.height;
+  const newZoom = Math.min(zoomX, zoomY);
+  currentZoom = Math.min(maxZoom, newZoom);
+  resetPan();
+  applyTransform();
+  setStatus('↕ Fit to Page');
+}
+
+fitWidthBtn.addEventListener('click', fitToWidth);
+fitPageBtn.addEventListener('click', fitToPage);
+
+// 📖 Toggle Single / Double Page View
+let isSinglePage = false;
+
+toggleViewBtn.addEventListener('click', () => {
+  isSinglePage = !isSinglePage;
+  const displayMode = isSinglePage ? 'single' : 'double';
+  flipbook.turn('display', displayMode);
+  setStatus(isSinglePage ? '📄 Single Page Mode' : '📖 Double Page Mode');
+});
+
+// 🌙 Night Mode Toggle
+nightModeBtn.addEventListener('click', () => {
+  document.body.classList.toggle('night');
+  const active = document.body.classList.contains('night');
+  nightModeBtn.textContent = active ? '☀️ Day Mode' : '🌙 Night Mode';
+  setStatus(active ? '🌙 Night Mode ON' : '☀️ Day Mode ON');
+});
+
 });

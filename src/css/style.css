@@ -7,6 +7,21 @@ body {
   color: #222;
 }
 
+body.night {
+  background-color: #121212;
+  color: #e0e0e0;
+}
+
+body.night #controls,
+body.night footer {
+  background-color: #1e1e1e;
+  color: #ddd;
+}
+
+body.night img {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 h1 {
   font-size: 26px;
   margin: 0;
@@ -132,6 +147,7 @@ footer {
   display: flex;
   flex-direction: row;
   gap: 10px;
+  height: 100vh;
 }
 
 .sidebar {
@@ -140,7 +156,7 @@ footer {
   background: #fafafa;
   border-right: 1px solid #ccc;
   padding: 10px;
-  height: 600px;
+  height: 100%;
 }
 
 .thumbnails {
