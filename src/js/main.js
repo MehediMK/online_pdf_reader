@@ -18,6 +18,13 @@ window.addEventListener('load', () => {
   const flipbookContainer = document.querySelector('.flipbook-container');
   const thumbnailContainer = document.getElementById('thumbnailContainer');
   const outlineContainer = document.getElementById('outlineContainer');
+  const toggleSoundBtn = document.getElementById('toggleSoundBtn');
+    
+  const fitWidthBtn = document.getElementById('fitWidthBtn');
+  const fitPageBtn = document.getElementById('fitPageBtn');
+  const toggleViewBtn = document.getElementById('toggleViewBtn');
+  const nightModeBtn = document.getElementById('nightModeBtn');
+  
   const flipbook = $('#flipbook');
 
   let pdfDoc = null;
@@ -27,6 +34,7 @@ window.addEventListener('load', () => {
   const zoomStep = 0.1;
   let isDragging = false, startX, startY, translateX = 0, translateY = 0;
   let isSinglePage = false;
+  let soundEnabled = true;
 
   function setStatus(msg) {
     status.textContent = msg;
@@ -108,6 +116,14 @@ window.addEventListener('load', () => {
           elevation: 50,
           gradients: true,
           duration: 800,
+          when: {
+            turning: function (event, page, view) {
+              if (!soundEnabled) return;
+              const flipSound = document.getElementById('flipSound');
+              flipSound.currentTime = 0;
+              flipSound.play().catch(() => {});
+            }
+          }
         });
         setStatus(`✅ Loaded ${pdfDoc.numPages} pages.`);
       }, 400);
@@ -384,13 +400,15 @@ window.addEventListener('load', () => {
     })
   );
 
-// === Viewing Options ===
+  // === Page slider sound on/off ===
+  document.getElementById('toggleSoundBtn').addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    setStatus(soundEnabled ? '🔊 Sound ON' : '🔇 Sound OFF');
+    // Change button text
+    toggleSoundBtn.textContent = soundEnabled ? '🔇 Mute Sound' : '🔊 Enable Sound';
+  });
 
 // 🧩 Fit to Width & Fit to Page
-const fitWidthBtn = document.getElementById('fitWidthBtn');
-const fitPageBtn = document.getElementById('fitPageBtn');
-const toggleViewBtn = document.getElementById('toggleViewBtn');
-const nightModeBtn = document.getElementById('nightModeBtn');
 
 function fitToWidth() {
   const container = flipbookContainer.getBoundingClientRect();
