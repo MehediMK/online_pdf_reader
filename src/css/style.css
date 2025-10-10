@@ -26,6 +26,10 @@ body.night h1 {
   color: #90caf9;
 }
 
+body.night img {
+  filter: invert(1) hue-rotate(180deg); 
+}
+
 /* ====== Controls Bar ====== */
 #controls {
   display: flex;
