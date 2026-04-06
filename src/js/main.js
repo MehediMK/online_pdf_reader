@@ -37,7 +37,6 @@ window.addEventListener('load', () => {
   const progressFill = document.getElementById('progressFill');
   const readBadge = document.getElementById('readBadge');
   const resumePrompt = document.getElementById('resumePrompt');
-  const resumeBtn = document.getElementById('resumeBtn');
 
   const flipbook = $('#flipbook');
 
@@ -53,7 +52,7 @@ window.addEventListener('load', () => {
   let soundEnabled = true;
   let isPresentationMode = false;
   let presentationHideTimer = null;
-  let lastTurnedPage = 1;
+  let visitedPages = [];
 
   function setStatus(msg) {
     status.textContent = msg;
@@ -71,6 +70,21 @@ window.addEventListener('load', () => {
 
   function showEmptyState() {
     if (emptyState) emptyState.style.display = 'flex';
+  }
+
+  function resetState() {
+    pdfDoc = null;
+    currentPdfName = null;
+    currentZoom = 1;
+    translateX = 0;
+    translateY = 0;
+    visitedPages = [];
+    pageNumberInput.value = '';
+    totalPages.textContent = '';
+    if (zoomLevel) zoomLevel.textContent = '100%';
+    if (readBadge) readBadge.style.display = 'none';
+    if (progressFill) progressFill.style.width = '0%';
+    showEmptyState();
   }
 
   // --- Reading Progress ---
@@ -101,19 +115,21 @@ window.addEventListener('load', () => {
     } catch {}
   }
 
-  function markVisitedPages(totalPages, visited) {
-    document.querySelectorAll('.thumbnail.visited').forEach(el => el.classList.remove('visited'));
-    visited.forEach(page => {
-      const thumb = thumbnailContainer.children[page - 1];
-      if (thumb) thumb.classList.add('visited');
-    });
+  function addVisitedPage(page) {
+    if (!visitedPages.includes(page)) {
+      visitedPages.push(page);
+    }
+    // Update thumbnail
+    const thumb = thumbnailContainer.children[page - 1];
+    if (thumb) thumb.classList.add('visited');
   }
 
   function updateReadPercent(current, total) {
-    const pct = Math.floor((current / total) * 100);
-    progressFill.style.width = `${pct}%`;
+    if (!total) return;
+    const pct = Math.min(100, Math.floor((current / total) * 100));
+    if (progressFill) progressFill.style.width = `${pct}%`;
     if (readBadge) {
-      readBadge.textContent = `${pct}% read`;
+      readBadge.textContent = `${pct}%`;
       readBadge.style.display = '';
     }
   }
@@ -159,32 +175,36 @@ window.addEventListener('load', () => {
   async function loadPDF(arrayBuffer) {
     try {
       setStatus('Loading PDF...');
+
+      // Clean up previous instance
+      if (pdfDoc) {
+        flipbook.turn('destroy');
+        flipbook.html('');
+      }
+
       pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       totalPages.textContent = `/ ${pdfDoc.numPages} pages`;
       pageNumberInput.max = pdfDoc.numPages;
 
       setStatus(`Rendering ${pdfDoc.numPages} pages...`);
-      flipbook.html('');
       thumbnailContainer.innerHTML = '';
       outlineContainer.innerHTML = '';
 
-      hideEmptyState();
-
       // Compute unique key for this PDF
-      currentPdfName = fileInput.files[0] ? (fileInput.files[0].name + '_' + fileInput.files[0].size) : 'unknown';
+      currentPdfName = fileInput.files[0]
+        ? fileInput.files[0].name + '_' + fileInput.files[0].size
+        : 'unknown_pdf';
       const progress = loadReadingProgress(currentPdfName);
-      const hasSavedProgress = progress.lastPage > 1 && progress.visited.length > 0;
+      const hasSavedProgress = progress.lastPage > 1;
 
-      // Show resume prompt
+      // Setup resume prompt
       if (hasSavedProgress && resumePrompt) {
+        resumePrompt.textContent = `Resume from page ${progress.lastPage}`;
         resumePrompt.style.display = 'flex';
-        if (resumePrompt.textContent || resumePrompt.querySelector('span')) {
-          resumePrompt.innerHTML = `<button id="resumeBtn" class="btn primary resume-btn">Resume from page ${progress.lastPage}</button>`;
-          document.getElementById('resumeBtn').addEventListener('click', () => {
-            flipbook.turn('page', progress.lastPage);
-            resumePrompt.style.display = 'none';
-          });
-        }
+        resumePrompt.onclick = () => {
+          setTimeout(() => flipbook.turn('page', progress.lastPage), 500);
+          resumePrompt.style.display = 'none';
+        };
       } else if (resumePrompt) {
         resumePrompt.style.display = 'none';
       }
@@ -231,6 +251,7 @@ window.addEventListener('load', () => {
           elevation: 50,
           gradients: true,
           duration: 800,
+          first: hasSavedProgress ? progress.lastPage : 1,
           when: {
             turning: function (event, page, view) {
               if (!soundEnabled) return;
@@ -249,20 +270,18 @@ window.addEventListener('load', () => {
               if (currentPdfName) {
                 saveReadingProgress(currentPdfName, page);
               }
+              addVisitedPage(page);
               updateReadPercent(page, pdfDoc.numPages);
-              markVisitedPages(pdfDoc.numPages, [page]);
             }
           }
         });
 
-        // Apply saved progress
-        if (hasSavedProgress && progress.lastPage <= pdfDoc.numPages) {
-          flipbook.turn('page', progress.lastPage);
-        }
+        hideEmptyState();
         updateReadPercent(1, pdfDoc.numPages);
+        addVisitedPage(1);
 
         setStatus(`Loaded ${pdfDoc.numPages} pages.`);
-      }, 400);
+      }, 500);
 
     } catch (err) {
       console.error(err);
@@ -276,32 +295,52 @@ window.addEventListener('load', () => {
   const colorPicker = document.getElementById('colorPicker');
 
   toolFreehandBtn.addEventListener('click', () => {
-    $('.page').each((_, pageDiv) => pageDiv.querySelector('.annotationLayer').setTool('freehand'));
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    $('.page').each((_, pageDiv) => {
+      const layer = pageDiv.querySelector('.annotationLayer');
+      if (layer) layer.setTool('freehand');
+    });
   });
 
   toolHighlightBtn.addEventListener('click', () => {
-    $('.page').each((_, pageDiv) => pageDiv.querySelector('.annotationLayer').setTool('highlight'));
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    $('.page').each((_, pageDiv) => {
+      const layer = pageDiv.querySelector('.annotationLayer');
+      if (layer) layer.setTool('highlight');
+    });
   });
 
   colorPicker.addEventListener('change', (e) => {
+    if (!pdfDoc) return;
     const color = e.target.value;
-    $('.page').each((_, pageDiv) => pageDiv.querySelector('.annotationLayer').setColor(color));
+    $('.page').each((_, pageDiv) => {
+      const layer = pageDiv.querySelector('.annotationLayer');
+      if (layer) layer.setColor(color);
+    });
   });
 
   document.getElementById('saveAnnotations').addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
     const saved = JSON.stringify(window.annotations || {});
     localStorage.setItem('pdfAnnotations', saved);
     setStatus('Annotations saved');
   });
 
   document.getElementById('loadAnnotations').addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
     const loaded = localStorage.getItem('pdfAnnotations');
     if (loaded) {
-      Object.values($('.page')).forEach(pageDiv => {
-        const layer = pageDiv.querySelector('.annotationLayer');
-        if (layer && layer.loadAnnotations) layer.loadAnnotations(loaded);
-      });
-      setStatus('Annotations loaded');
+      try {
+        window.annotations = JSON.parse(loaded);
+        document.querySelectorAll('.annotationLayer').forEach(canvas => {
+          if (canvas.redrawAnnotations) canvas.redrawAnnotations();
+        });
+        setStatus('Annotations loaded');
+      } catch {
+        setStatus('Error loading annotations');
+      }
+    } else {
+      setStatus('No saved annotations found');
     }
   });
 
@@ -309,8 +348,9 @@ window.addEventListener('load', () => {
   let annotationsActive = false;
 
   annotateBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
     annotationsActive = !annotationsActive;
-    annotateBtn.textContent = annotationsActive ? 'Stop Annotating' : 'Annotate';
+    annotateBtn.textContent = annotationsActive ? 'Stop' : 'Annotate';
     setStatus(annotationsActive ? 'Annotation mode ON' : 'Annotation mode OFF');
 
     document.querySelectorAll('.annotationLayer').forEach(canvas => {
@@ -321,8 +361,8 @@ window.addEventListener('load', () => {
   function addAnnotationLayer(pageDiv, pageNumber) {
     const canvas = document.createElement('canvas');
     canvas.className = 'annotationLayer';
-    canvas.width = pageDiv.clientWidth;
-    canvas.height = pageDiv.clientHeight;
+    canvas.width = pageDiv.clientWidth || 450;
+    canvas.height = pageDiv.clientHeight || 600;
     canvas.style.position = 'absolute';
     canvas.style.top = '0';
     canvas.style.left = '0';
@@ -357,7 +397,11 @@ window.addEventListener('load', () => {
       });
     }
 
+    // Expose for load
+    canvas.redrawAnnotations = redrawAnnotations;
+
     canvas.addEventListener('mousedown', (e) => {
+      if (!annotationsActive) return;
       drawing = true;
       startX = e.offsetX;
       startY = e.offsetY;
@@ -369,7 +413,7 @@ window.addEventListener('load', () => {
     });
 
     canvas.addEventListener('mousemove', (e) => {
-      if (!drawing) return;
+      if (!drawing || !annotationsActive) return;
       const x = e.offsetX;
       const y = e.offsetY;
 
@@ -389,6 +433,7 @@ window.addEventListener('load', () => {
     });
 
     canvas.addEventListener('mouseup', (e) => {
+      if (!annotationsActive) return;
       drawing = false;
       const x = e.offsetX;
       const y = e.offsetY;
@@ -428,23 +473,32 @@ window.addEventListener('load', () => {
     };
   }
 
-  // --- Load PDF ---
+  // --- Load PDF Button ---
   loadBtn.addEventListener('click', () => {
     const file = fileInput.files[0];
     if (!file) {
       setStatus('Please select a PDF file first.');
       return;
     }
+    resetState();
     const reader = new FileReader();
     reader.onload = (e) => loadPDF(e.target.result);
     reader.readAsArrayBuffer(file);
   });
 
   // --- Navigation ---
-  prevBtn.addEventListener('click', () => flipbook.turn('previous'));
-  nextBtn.addEventListener('click', () => flipbook.turn('next'));
+  prevBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    flipbook.turn('previous');
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    flipbook.turn('next');
+  });
 
   pageNumberInput.addEventListener('change', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
     const pageNum = parseInt(pageNumberInput.value);
     if (pageNum >= 1 && pageNum <= pdfDoc.numPages) {
       flipbook.turn('page', pageNum);
@@ -470,6 +524,7 @@ window.addEventListener('load', () => {
   }
 
   zoomInBtnEl.addEventListener('click', () => {
+    if (!pdfDoc) return;
     if (currentZoom < maxZoom) {
       currentZoom += zoomStep;
       applyTransform();
@@ -478,6 +533,7 @@ window.addEventListener('load', () => {
   });
 
   zoomOutBtnEl.addEventListener('click', () => {
+    if (!pdfDoc) return;
     if (currentZoom > minZoom) {
       currentZoom -= zoomStep;
       if (currentZoom <= 1) resetPan();
@@ -524,41 +580,42 @@ window.addEventListener('load', () => {
   toggleSoundBtn.addEventListener('click', () => {
     soundEnabled = !soundEnabled;
     toggleSoundBtn.textContent = soundEnabled ? '🔊' : '🔇';
-    toggleSoundBtn.title = soundEnabled ? 'Mute Sound' : 'Enable Sound';
     setStatus(soundEnabled ? 'Sound ON' : 'Sound OFF');
   });
 
-  // --- Fit ---
-  function fitToWidth() {
-    const container = flipbookContainer.getBoundingClientRect();
-    const book = flipbook[0].getBoundingClientRect();
-    const newZoom = container.width / book.width;
+  // --- Fit to Width ---
+  fitWidthBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    // Use actual Turn.js book dimensions, not transformed ones
+    const book = flipbook.turn('size');
+    const containerWidth = flipbookContainer.getBoundingClientRect().width;
+    const newZoom = containerWidth / book.width;
     currentZoom = Math.min(maxZoom, newZoom);
     resetPan();
     applyTransform();
     setStatus('Fit to Width');
-  }
+  });
 
-  function fitToPage() {
-    const container = flipbookContainer.getBoundingClientRect();
-    const book = flipbook[0].getBoundingClientRect();
-    const zoomX = container.width / book.width;
-    const zoomY = container.height / book.height;
-    const newZoom = Math.min(zoomX, zoomY);
-    currentZoom = Math.min(maxZoom, newZoom);
+  // --- Fit to Page ---
+  fitPageBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    const book = flipbook.turn('size');
+    const containerWidth = flipbookContainer.getBoundingClientRect().width;
+    const containerHeight = flipbookContainer.getBoundingClientRect().height;
+    const zoomX = containerWidth / book.width;
+    const zoomY = containerHeight / book.height;
+    currentZoom = Math.min(maxZoom, Math.min(zoomX, zoomY));
     resetPan();
     applyTransform();
-    setStatus('Fit to Page');
-  }
-
-  fitWidthBtn.addEventListener('click', fitToWidth);
-  fitPageBtn.addEventListener('click', fitToPage);
+    setStatus('Fit Page');
+  });
 
   // --- Single / Double View ---
   toggleViewBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
     isSinglePage = !isSinglePage;
     flipbook.turn('display', isSinglePage ? 'single' : 'double');
-    setStatus(isSinglePage ? 'Single Page Mode' : 'Double Page Mode');
+    setStatus(isSinglePage ? 'Single Page View' : 'Double Page View');
   });
 
   // --- Night Mode ---
@@ -601,7 +658,7 @@ window.addEventListener('load', () => {
     }
 
     showPresentationUI();
-    presentationBtn.textContent = 'Exit Present';
+    presentationBtn.textContent = 'Exit';
     setStatus('Presentation mode ON');
   }
 
@@ -620,7 +677,8 @@ window.addEventListener('load', () => {
     setStatus('Presentation mode OFF');
   }
 
-  presentationBtn.addEventListener('click', () => {
+  presentationBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     if (isPresentationMode) {
       exitPresentationMode();
     } else {
@@ -628,13 +686,30 @@ window.addEventListener('load', () => {
     }
   });
 
-  presentationPrev.addEventListener('click', () => flipbook.turn('previous'));
-  presentationNext.addEventListener('click', () => flipbook.turn('next'));
-  presentationExit.addEventListener('click', exitPresentationMode);
+  presentationPrev.addEventListener('click', (e) => {
+    e.stopPropagation();
+    flipbook.turn('previous');
+  });
 
-  presentationOverlay.addEventListener('click', () => {
+  presentationNext.addEventListener('click', (e) => {
+    e.stopPropagation();
+    flipbook.turn('next');
+  });
+
+  presentationExit.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exitPresentationMode();
+  });
+
+  presentationOverlay.addEventListener('click', (e) => {
+    // Don't toggle UI if clicking a button or progress
+    if (e.target.closest('.presentation-controls') ||
+        e.target.closest('.presentation-progress') ||
+        e.target.closest('.presentation-page')) return;
+
     if (presentationOverlay.classList.contains('show-presentation-ui')) {
       presentationOverlay.classList.remove('show-presentation-ui');
+      clearTimeout(presentationHideTimer);
     } else {
       showPresentationUI();
     }
@@ -647,12 +722,12 @@ window.addEventListener('load', () => {
         exitPresentationMode();
         return;
       }
-      if (e.key === 'ArrowRight' || e.key === ' ') {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'ArrowDown') {
         e.preventDefault();
         flipbook.turn('next');
         showPresentationUI();
       }
-      if (e.key === 'ArrowLeft') {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         e.preventDefault();
         flipbook.turn('previous');
         showPresentationUI();
@@ -669,12 +744,18 @@ window.addEventListener('load', () => {
 
     if (e.target.tagName === 'INPUT') return;
 
+    if (e.key === 'ArrowRight' && pdfDoc) {
+      flipbook.turn('next');
+    }
+    if (e.key === 'ArrowLeft' && pdfDoc) {
+      flipbook.turn('previous');
+    }
     if (e.key === 'n') {
       nightModeBtn.click();
     }
   });
 
-  // Exit presentation on ESC (fullscreen exit)
+  // Exit presentation on fullscreen exit
   document.addEventListener('fullscreenchange', () => {
     if (!document.fullscreenElement && isPresentationMode) {
       exitPresentationMode();
