@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Online PDF Reader</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./src/css/style.css">
    <!-- ✅ jQuery (required by Turn.js) -->
   <script src="./src/js/jquery-3.6.0.min.js"></script>
@@ -16,53 +17,112 @@
 </head>
 <body>
 
-  <h1 style="text-align: center;">📘 Online PDF Reader</h1>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1>📘 PDF Reader</h1>
+      <button id="sidebarToggle" class="btn secondary sidebar-toggle" title="Toggle Sidebar">☰</button>
+    </div>
+    <div id="progressBar" class="progress-bar">
+      <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+    </div>
+  </header>
 
-  <div id="controls">
-    <input type="file" id="fileInput" accept="application/pdf">
-    <button id="loadBtn" class="btn">Load PDF</button>
-    <button id="prevBtn" class="btn secondary">Prev</button>
-    
-    <!-- 🔢 Page number input -->
-    <input type="number" id="pageNumberInput" min="1" style="width:60px;" placeholder="Pg#" />
-    <span id="totalPages"></span>
+  <!-- Controls Bar -->
+  <nav id="controls">
+    <div class="control-group">
+      <input type="file" id="fileInput" accept="application/pdf">
+      <button id="loadBtn" class="btn primary">Load</button>
+    </div>
 
-    <button id="nextBtn" class="btn secondary">Next</button>
+    <div class="control-divider"></div>
 
-    <button id="zoomInBtn" class="btn zoom">🔍+</button>
-    <button id="zoomOutBtn" class="btn zoom">🔎−</button>
-    <span id="status">No file selected.</span>
-    <button id="toggleSoundBtn" class="btn">🔈 Toggle Sound</button>
-    <button id="fitWidthBtn" class="btn">↔ Fit Width</button>
-    <button id="fitPageBtn" class="btn">↕ Fit Page</button>
-    <button id="toggleViewBtn" class="btn">📖 Toggle View</button>
-    <button id="nightModeBtn" class="btn">🌙 Night Mode</button>
-    
-    <button id="annotateBtn" class="btn">✏️ Annotate</button>
-    <button id="toolFreehand" class="btn">✏️ Draw</button>
-    <button id="toolHighlight" class="btn">🖍️ Highlight</button>
-    <input type="color" id="colorPicker" value="#ff0000">
-    <button id="saveAnnotations" class="btn">💾 Save</button>
-    <button id="loadAnnotations" class="btn">📂 Load</button>
+    <div class="control-group">
+      <button id="prevBtn" class="btn secondary" title="Previous Page">◀</button>
+      <input type="number" id="pageNumberInput" min="1" placeholder="Pg#" title="Page number" />
+      <span id="totalPages" class="page-info"></span>
+      <button id="nextBtn" class="btn secondary" title="Next Page">▶</button>
+    </div>
 
-  </div>
+    <div class="control-divider"></div>
+
+    <div class="control-group">
+      <button id="zoomOutBtn" class="btn zoom" title="Zoom Out">−</button>
+      <span id="zoomLevel" class="badge">100%</span>
+      <button id="zoomInBtn" class="btn zoom" title="Zoom In">+</button>
+      <button id="fitWidthBtn" class="btn" title="Fit Width">↔</button>
+      <button id="fitPageBtn" class="btn" title="Fit Page">↕</button>
+    </div>
+
+    <div class="control-divider"></div>
+
+    <div class="control-group">
+      <button id="toggleViewBtn" class="btn" title="Toggle Single/Double View">📖 View</button>
+      <button id="toggleSoundBtn" class="btn" title="Toggle Sound">🔊</button>
+      <button id="nightModeBtn" class="btn" title="Night Mode">🌙</button>
+    </div>
+
+    <div class="control-divider"></div>
+
+    <div class="control-group annotation-controls">
+      <button id="annotateBtn" class="btn" title="Toggle Annotation Mode">✏️ Annotate</button>
+      <button id="toolFreehand" class="btn" title="Freehand Draw">🖊 Draw</button>
+      <button id="toolHighlight" class="btn" title="Highlight Text">🖍 Highlight</button>
+      <input type="color" id="colorPicker" value="#ff0000" title="Annotation Color">
+      <button id="saveAnnotations" class="btn" title="Save Annotations">💾</button>
+      <button id="loadAnnotations" class="btn" title="Load Annotations">📂</button>
+    </div>
+
+    <div class="control-divider"></div>
+
+    <div class="control-group">
+      <button id="presentationBtn" class="btn toggle-on" title="Full-Screen Presentation">🖥 Present</button>
+      <span id="status" class="status-badge">No file selected.</span>
+    </div>
+  </nav>
 
   <div class="pdf-wrapper">
     <!-- 📑 Sidebar for thumbnails & outline -->
-    <aside class="sidebar">
-      <h3>Thumbnails</h3>
-      <div id="thumbnailContainer" class="thumbnails"></div>
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-header">
+          <h3>Pages</h3>
+          <span id="readBadge" class="sidebar-read-badge" style="display:none"></span>
+        </div>
+        <div id="resumePrompt" class="resume-prompt" style="display:none">
+          <button id="resumeBtn" class="btn primary resume-btn">Resume reading</button>
+        </div>
+        <div id="thumbnailContainer" class="thumbnails"></div>
+      </div>
 
-      <h3>Table of Contents</h3>
-      <ul id="outlineContainer" class="outline"></ul>
+      <div class="sidebar-section">
+        <h3>Table of Contents</h3>
+        <ul id="outlineContainer" class="outline"></ul>
+      </div>
     </aside>
 
-    <!-- 📖 Main Flipbook -->
+    <!-- 🖥 Main Flipbook -->
     <main class="flipbook-container">
       <div id="flipbook" class="shadow"></div>
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon">📄</div>
+        <p>Upload a PDF to get started</p>
+      </div>
     </main>
   </div>
+
   <audio id="flipSound" src="./src/static/paper_slider.mp3" preload="auto"></audio>
+
+  <!-- 🖥️ Presentation Mode Overlay -->
+  <div id="presentationOverlay" class="presentation-overlay hidden">
+    <div id="presentationPage" class="presentation-page"></div>
+    <div class="presentation-controls">
+      <button id="presentationPrev" class="btn secondary">← Prev</button>
+      <button id="presentationNext" class="btn secondary">Next →</button>
+      <button id="presentationExit" class="btn secondary">✕ Exit</button>
+    </div>
+    <div id="presentationProgress" class="presentation-progress"></div>
+  </div>
 
   <footer>
     <p>Built with ❤️ using <strong>PDF.js</strong> & <strong>Turn.js</strong></p>
