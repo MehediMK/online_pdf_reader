@@ -961,3 +961,66 @@ body.night .sidebar {
 body.night .sidebar::-webkit-scrollbar-thumb {
   background: #484f58;
 }
+
+/* ====== Print Styles ====== */
+@media print {
+  body {
+    background: #fff !important;
+  }
+
+  .app-header,
+  #controls,
+  #sidebar,
+  footer,
+  .presentation-overlay,
+  .sidebar-backdrop {
+    display: none !important;
+  }
+
+  .pdf-wrapper {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .flipbook-container {
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .flipbook-container #flipbook {
+    height: auto !important;
+    transform: none !important;
+  }
+
+  #flipbook .page {
+    page-break-inside: avoid;
+    page-break-after: always;
+    margin-bottom: 0;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    max-height: 95vh;
+  }
+
+  #flipbook .page img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .annotationLayer {
+    display: none !important;
+  }
+
+  .empty-state {
+    display: none !important;
+  }
+
+  @page {
+    margin: 0.5cm;
+  }
+}

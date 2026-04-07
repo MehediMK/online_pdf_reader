@@ -25,6 +25,7 @@ window.addEventListener('load', () => {
   const fitPageBtn = document.getElementById('fitPageBtn');
   const toggleViewBtn = document.getElementById('toggleViewBtn');
   const nightModeBtn = document.getElementById('nightModeBtn');
+  const printBtn = document.getElementById('printBtn');
   const sidebarToggle = document.getElementById('sidebarToggle');
   const presentationOverlay = document.getElementById('presentationOverlay');
   const presentationPage = document.getElementById('presentationPage');
@@ -692,6 +693,12 @@ window.addEventListener('load', () => {
     const active = document.body.classList.contains('night');
     nightModeBtn.textContent = active ? '☀️' : '🌙';
     setStatus(active ? 'Night Mode ON' : 'Day Mode ON');
+  });
+
+  // --- Print PDF ---
+  printBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    window.print();
   });
 
   // --- Presentation Mode ---
