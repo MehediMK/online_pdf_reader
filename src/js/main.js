@@ -54,6 +54,9 @@ window.addEventListener('load', () => {
   let presentationHideTimer = null;
   let visitedPages = [];
 
+  // Detect touch device
+  const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
   function setStatus(msg) {
     status.textContent = msg;
   }
@@ -209,6 +212,9 @@ window.addEventListener('load', () => {
         resumePrompt.style.display = 'none';
       }
 
+      // Mobile: force single page display
+      isSinglePage = isTouchDevice;
+
       for (let i = 1; i <= pdfDoc.numPages; i++) {
         const pageImg = await renderPage(pdfDoc, i);
         const pageDiv = document.createElement('div');
@@ -242,12 +248,28 @@ window.addEventListener('load', () => {
       }
 
       setTimeout(() => {
+        // Dynamic turn.js size based on screen
+        const displayMode = isSinglePage ? 'single' : 'double';
+        const vw = window.innerWidth;
+
+        // For single-page mobile, each page = container width
+        // For double, total book width = 2 * page width
+        let bookWidth, bookHeight, pageWidth;
+
+        if (isSinglePage) {
+          bookWidth = vw <= 420 ? vw - 32 : vw <= 768 ? vw - 32 : Math.min(900, vw - 240);
+          bookHeight = Math.min(600, window.innerHeight * 0.65);
+        } else {
+          bookWidth = 900;
+          bookHeight = 600;
+        }
+
         flipbook.turn({
-          width: 900,
-          height: 600,
+          width: bookWidth,
+          height: bookHeight,
           autoCenter: true,
           acceleration: true,
-          display: 'double',
+          display: displayMode,
           elevation: 50,
           gradients: true,
           duration: 800,
@@ -576,6 +598,47 @@ window.addEventListener('load', () => {
     })
   );
 
+  // --- Touch Events for Mobile Page Swiping ---
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchMoveX = 0;
+  let isSwiping = false;
+
+  flipbookContainer.addEventListener('touchstart', (e) => {
+    // Don't intercept touch when in annotation mode
+    if (annotationsActive) return;
+    const touch = e.touches[0];
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+    touchMoveX = touchStartX;
+    isSwiping = true;
+  }, { passive: true });
+
+  flipbookContainer.addEventListener('touchmove', (e) => {
+    if (!isSwiping) return;
+    const touch = e.touches[0];
+    touchMoveX = touch.clientX;
+  }, { passive: true });
+
+  flipbookContainer.addEventListener('touchend', (e) => {
+    if (!isSwiping) return;
+    isSwiping = false;
+
+    if (!pdfDoc) return;
+
+    const diff = touchStartX - touchMoveX;
+    const swipeThreshold = 50; // minimum swipe distance
+
+    // Swipe left = go next, swipe right = go prev
+    if (Math.abs(diff) > swipeThreshold) {
+      if (diff > 0) {
+        flipbook.turn('next');
+      } else {
+        flipbook.turn('previous');
+      }
+    }
+  }, { passive: true });
+
   // --- Sound ---
   toggleSoundBtn.addEventListener('click', () => {
     soundEnabled = !soundEnabled;
@@ -613,6 +676,11 @@ window.addEventListener('load', () => {
   // --- Single / Double View ---
   toggleViewBtn.addEventListener('click', () => {
     if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    // On touch devices, keep single page always
+    if (isTouchDevice) {
+      setStatus('Single Page View (forced for mobile)');
+      return;
+    }
     isSinglePage = !isSinglePage;
     flipbook.turn('display', isSinglePage ? 'single' : 'double');
     setStatus(isSinglePage ? 'Single Page View' : 'Double Page View');
@@ -760,5 +828,32 @@ window.addEventListener('load', () => {
     if (!document.fullscreenElement && isPresentationMode) {
       exitPresentationMode();
     }
+  });
+
+  // --- Mobile: handle orientation change ---
+  window.addEventListener('resize', () => {
+    if (!pdfDoc || !flipbook.turn('options')) return;
+
+    const vw = window.innerWidth;
+    let bookWidth, bookHeight;
+
+    if (isSinglePage) {
+      bookWidth = vw <= 420 ? vw - 24 : vw <= 768 ? vw - 20 : Math.min(900, vw - 200);
+      bookHeight = Math.min(600, window.innerHeight * 0.65);
+    } else {
+      bookWidth = 900;
+      bookHeight = 600;
+    }
+
+    flipbook.turn('size', bookWidth, bookHeight);
+
+    // Resize annotation canvases
+    flipbook.find('.page').each((_, pageDiv) => {
+      const layer = pageDiv.querySelector('.annotationLayer');
+      if (layer) {
+        layer.width = pageDiv.clientWidth;
+        layer.height = pageDiv.clientHeight;
+      }
+    });
   });
 });

@@ -215,7 +215,12 @@ body.night input[type="file"] {
 
 .btn:hover {
   background: #dbe2ef;
-  transform: translateY(-1px);
+}
+
+@media (hover: hover) {
+  .btn:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .btn:active {
@@ -433,10 +438,12 @@ body.night .sidebar-section-header h3 {
   display: block;
 }
 
-.thumbnail:hover {
-  transform: scale(1.03);
-  border-color: #4a86f7;
-  box-shadow: 0 3px 10px rgba(74,134,247,0.2);
+@media (hover: hover) {
+  .thumbnail:hover {
+    transform: scale(1.03);
+    border-color: #4a86f7;
+    box-shadow: 0 3px 10px rgba(74,134,247,0.2);
+  }
 }
 
 .thumbnail.visited {
@@ -794,6 +801,10 @@ body.presentation-active .flipbook-container {
     align-items: stretch;
   }
 
+  .flipbook-container {
+    border-radius: 6px;
+  }
+
   .sidebar {
     position: fixed;
     top: 0;
@@ -808,6 +819,7 @@ body.presentation-active .flipbook-container {
     box-shadow: 4px 0 20px rgba(0,0,0,0.2);
     overflow-y: auto;
     overflow-x: hidden;
+    overscroll-behavior: contain;
   }
 
   .sidebar.sidebar-open {
@@ -837,9 +849,8 @@ body.presentation-active .flipbook-container {
   }
 
   .flipbook-container #flipbook {
-    height: 65vh;
-    max-height: 500px;
-    min-height: 280px;
+    height: 62vh;
+    min-height: 240px;
   }
 
   footer {
@@ -907,8 +918,8 @@ body.presentation-active .flipbook-container {
   }
 
   .flipbook-container #flipbook {
-    height: 55vh;
-    min-height: 240px;
+    height: 56vh;
+    min-height: 200px;
   }
 
   .pdf-wrapper {
