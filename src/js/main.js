@@ -9,6 +9,7 @@ window.addEventListener('load', () => {
   // --- Elements ---
   const fileInput = document.getElementById('fileInput');
   const loadBtn = document.getElementById('loadBtn');
+  const emptyLoadBtn = document.getElementById('emptyLoadBtn');
   const status = document.getElementById('status');
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
@@ -17,7 +18,7 @@ window.addEventListener('load', () => {
   const zoomLevel = document.getElementById('zoomLevel');
   const pageNumberInput = document.getElementById('pageNumberInput');
   const totalPages = document.getElementById('totalPages');
-  const flipbookContainer = document.querySelector('.flipbook-container');
+  const viewer = document.querySelector('.viewer');
   const thumbnailContainer = document.getElementById('thumbnailContainer');
   const outlineContainer = document.getElementById('outlineContainer');
   const toggleSoundBtn = document.getElementById('toggleSoundBtn');
@@ -40,6 +41,12 @@ window.addEventListener('load', () => {
   const resumePrompt = document.getElementById('resumePrompt');
 
   const flipbook = $('#flipbook');
+  const annotateBtn = document.getElementById('annotateBtn');
+  const toolFreehandBtn = document.getElementById('toolFreehand');
+  const toolHighlightBtn = document.getElementById('toolHighlight');
+  const colorPicker = document.getElementById('colorPicker');
+  const saveAnnotationsBtn = document.getElementById('saveAnnotations');
+  const loadAnnotationsBtn = document.getElementById('loadAnnotations');
 
   // --- State ---
   let pdfDoc = null;
@@ -48,32 +55,30 @@ window.addEventListener('load', () => {
   const minZoom = 0.5;
   const maxZoom = 2.5;
   const zoomStep = 0.1;
-  let isDragging = false, startX, startY, translateX = 0, translateY = 0;
+  let isDragging = false, dragStartX = 0, dragStartY = 0, translateX = 0, translateY = 0;
   let isSinglePage = false;
   let soundEnabled = true;
   let isPresentationMode = false;
   let presentationHideTimer = null;
   let visitedPages = [];
+  let annotationsActive = false;
+  let isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
-  // Detect touch device
-  const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-
+  // --- Utility ---
   function setStatus(msg) {
     status.textContent = msg;
   }
 
   function updateZoomBadge() {
-    if (zoomLevel) {
-      zoomLevel.textContent = `${(currentZoom * 100).toFixed(0)}%`;
-    }
-  }
-
-  function hideEmptyState() {
-    if (emptyState) emptyState.style.display = 'none';
+    if (zoomLevel) zoomLevel.textContent = `${(currentZoom * 100).toFixed(0)}%`;
   }
 
   function showEmptyState() {
-    if (emptyState) emptyState.style.display = 'flex';
+    if (emptyState) emptyState.classList.remove('hidden');
+  }
+
+  function hideEmptyState() {
+    if (emptyState) emptyState.classList.add('hidden');
   }
 
   function resetState() {
@@ -89,6 +94,7 @@ window.addEventListener('load', () => {
     if (readBadge) readBadge.style.display = 'none';
     if (progressFill) progressFill.style.width = '0%';
     showEmptyState();
+    flipbook.html('');
   }
 
   // --- Reading Progress ---
@@ -101,29 +107,20 @@ window.addEventListener('load', () => {
       const data = localStorage.getItem(pdfKey(name));
       if (!data) return { lastPage: 1, visited: [] };
       return JSON.parse(data);
-    } catch {
-      return { lastPage: 1, visited: [] };
-    }
+    } catch { return { lastPage: 1, visited: [] }; }
   }
 
   function saveReadingProgress(name, pageNum) {
     try {
       const progress = loadReadingProgress(name);
-      if (!progress.visited.includes(pageNum)) {
-        progress.visited.push(pageNum);
-      }
-      if (pageNum > progress.lastPage) {
-        progress.lastPage = pageNum;
-      }
+      if (!progress.visited.includes(pageNum)) progress.visited.push(pageNum);
+      if (pageNum > progress.lastPage) progress.lastPage = pageNum;
       localStorage.setItem(pdfKey(name), JSON.stringify(progress));
     } catch {}
   }
 
   function addVisitedPage(page) {
-    if (!visitedPages.includes(page)) {
-      visitedPages.push(page);
-    }
-    // Update thumbnail
+    if (!visitedPages.includes(page)) visitedPages.push(page);
     const thumb = thumbnailContainer.children[page - 1];
     if (thumb) thumb.classList.add('visited');
   }
@@ -132,13 +129,10 @@ window.addEventListener('load', () => {
     if (!total) return;
     const pct = Math.min(100, Math.floor((current / total) * 100));
     if (progressFill) progressFill.style.width = `${pct}%`;
-    if (readBadge) {
-      readBadge.textContent = `${pct}%`;
-      readBadge.style.display = '';
-    }
+    if (readBadge) { readBadge.textContent = `${pct}%`; readBadge.style.display = ''; }
   }
 
-  // --- Sidebar Toggle (mobile) ---
+  // --- Sidebar Toggle ---
   let sidebarOpen = false;
 
   sidebarToggle.addEventListener('click', () => {
@@ -152,25 +146,91 @@ window.addEventListener('load', () => {
       backdrop.className = 'sidebar-backdrop';
       document.body.appendChild(backdrop);
     }
-    backdrop.classList.toggle('sidebar-open', sidebarOpen);
+    backdrop.classList.toggle('active', sidebarOpen);
     backdrop.onclick = () => {
       sidebarOpen = false;
       sidebar.classList.remove('sidebar-open');
-      backdrop.classList.remove('sidebar-open');
+      backdrop.classList.remove('active');
     };
+  });
+
+  // --- PDF Loading via Browse ---
+  function loadFile(file) {
+    if (!file || file.type !== 'application/pdf') {
+      setStatus('Please select a valid PDF file.');
+      return;
+    }
+    resetState();
+    const reader = new FileReader();
+    reader.onload = (e) => loadPDF(e.target.result);
+    reader.readAsArrayBuffer(file);
+  }
+
+  loadBtn.addEventListener('click', () => {
+    const file = fileInput.files[0];
+    if (!file) { setStatus('Please select a PDF file first.'); return; }
+    loadFile(file);
+  });
+
+  if (emptyLoadBtn) {
+    emptyLoadBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+  }
+
+  emptyState.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) loadFile(fileInput.files[0]);
+  });
+
+  // --- Drag & Drop ---
+  let dragCounter = 0;
+
+  function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+    document.addEventListener(evt, preventDefaults, false);
+  });
+
+  document.addEventListener('dragenter', (e) => {
+    dragCounter++;
+    viewer.classList.add('drag-over');
+    if (emptyState) emptyState.classList.add('drag-over');
+  });
+
+  document.addEventListener('dragleave', (e) => {
+    dragCounter--;
+    if (dragCounter === 0) {
+      viewer.classList.remove('drag-over');
+      if (emptyState) emptyState.classList.remove('drag-over');
+    }
+  });
+
+  document.addEventListener('drop', (e) => {
+    dragCounter = 0;
+    viewer.classList.remove('drag-over');
+    if (emptyState) emptyState.classList.remove('drag-over');
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0 && files[0].type === 'application/pdf') {
+      loadFile(files[0]);
+      fileInput.files = files;
+    } else {
+      setStatus('Please drop a valid PDF file.');
+    }
   });
 
   // --- PDF Rendering ---
   async function renderPage(pdf, pageNumber, scale = 1.5) {
     const page = await pdf.getPage(pageNumber);
     const viewport = page.getViewport({ scale });
-
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     await page.render({ canvasContext: ctx, viewport }).promise;
-
     const img = document.createElement('img');
     img.src = canvas.toDataURL('image/jpeg', 0.9);
     return img;
@@ -180,31 +240,28 @@ window.addEventListener('load', () => {
     try {
       setStatus('Loading PDF...');
 
-      // Clean up previous instance
       if (pdfDoc) {
         flipbook.turn('destroy');
         flipbook.html('');
       }
 
       pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      totalPages.textContent = `/ ${pdfDoc.numPages} pages`;
+      totalPages.textContent = `/ ${pdfDoc.numPages}`;
       pageNumberInput.max = pdfDoc.numPages;
 
       setStatus(`Rendering ${pdfDoc.numPages} pages...`);
       thumbnailContainer.innerHTML = '';
       outlineContainer.innerHTML = '';
 
-      // Compute unique key for this PDF
       currentPdfName = fileInput.files[0]
         ? fileInput.files[0].name + '_' + fileInput.files[0].size
         : 'unknown_pdf';
       const progress = loadReadingProgress(currentPdfName);
       const hasSavedProgress = progress.lastPage > 1;
 
-      // Setup resume prompt
       if (hasSavedProgress && resumePrompt) {
-        resumePrompt.textContent = `Resume from page ${progress.lastPage}`;
         resumePrompt.style.display = 'flex';
+        resumePrompt.querySelector('button').textContent = `Resume from page ${progress.lastPage}`;
         resumePrompt.onclick = () => {
           setTimeout(() => flipbook.turn('page', progress.lastPage), 500);
           resumePrompt.style.display = 'none';
@@ -213,7 +270,6 @@ window.addEventListener('load', () => {
         resumePrompt.style.display = 'none';
       }
 
-      // Mobile: force single page display
       isSinglePage = isTouchDevice;
 
       for (let i = 1; i <= pdfDoc.numPages; i++) {
@@ -222,7 +278,6 @@ window.addEventListener('load', () => {
         pageDiv.className = 'page';
         pageDiv.appendChild(pageImg);
         flipbook.append(pageDiv);
-
         addAnnotationLayer(pageDiv, i);
 
         const thumbImg = await renderPage(pdfDoc, i, 0.2);
@@ -249,16 +304,12 @@ window.addEventListener('load', () => {
       }
 
       setTimeout(() => {
-        // Dynamic turn.js size based on screen
         const displayMode = isSinglePage ? 'single' : 'double';
         const vw = window.innerWidth;
-
-        // For single-page mobile, each page = container width
-        // For double, total book width = 2 * page width
-        let bookWidth, bookHeight, pageWidth;
+        let bookWidth, bookHeight;
 
         if (isSinglePage) {
-          bookWidth = vw <= 420 ? vw - 32 : vw <= 768 ? vw - 32 : Math.min(900, vw - 240);
+          bookWidth = vw <= 420 ? vw - 24 : vw <= 768 ? vw - 20 : Math.min(900, vw - 280);
           bookHeight = Math.min(600, window.innerHeight * 0.65);
         } else {
           bookWidth = 900;
@@ -277,22 +328,16 @@ window.addEventListener('load', () => {
           first: hasSavedProgress ? progress.lastPage : 1,
           when: {
             turning: function (event, page, view) {
-              if (!soundEnabled) return;
-              const flipSound = document.getElementById('flipSound');
-              flipSound.currentTime = 0;
-              flipSound.play().catch(() => {});
-
-              if (isPresentationMode) {
-                updatePresentationPage(page);
+              if (soundEnabled) {
+                const flipSound = document.getElementById('flipSound');
+                flipSound.currentTime = 0;
+                flipSound.play().catch(() => {});
               }
+              if (isPresentationMode) updatePresentationPage(page);
             },
             turned: function (event, page, view) {
               pageNumberInput.value = page;
-              lastTurnedPage = page;
-
-              if (currentPdfName) {
-                saveReadingProgress(currentPdfName, page);
-              }
+              if (currentPdfName) saveReadingProgress(currentPdfName, page);
               addVisitedPage(page);
               updateReadPercent(page, pdfDoc.numPages);
             }
@@ -302,7 +347,6 @@ window.addEventListener('load', () => {
         hideEmptyState();
         updateReadPercent(1, pdfDoc.numPages);
         addVisitedPage(1);
-
         setStatus(`Loaded ${pdfDoc.numPages} pages.`);
       }, 500);
 
@@ -313,90 +357,18 @@ window.addEventListener('load', () => {
   }
 
   // --- Annotation Layer ---
-  const toolFreehandBtn = document.getElementById('toolFreehand');
-  const toolHighlightBtn = document.getElementById('toolHighlight');
-  const colorPicker = document.getElementById('colorPicker');
-
-  toolFreehandBtn.addEventListener('click', () => {
-    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
-    $('.page').each((_, pageDiv) => {
-      const layer = pageDiv.querySelector('.annotationLayer');
-      if (layer) layer.setTool('freehand');
-    });
-  });
-
-  toolHighlightBtn.addEventListener('click', () => {
-    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
-    $('.page').each((_, pageDiv) => {
-      const layer = pageDiv.querySelector('.annotationLayer');
-      if (layer) layer.setTool('highlight');
-    });
-  });
-
-  colorPicker.addEventListener('change', (e) => {
-    if (!pdfDoc) return;
-    const color = e.target.value;
-    $('.page').each((_, pageDiv) => {
-      const layer = pageDiv.querySelector('.annotationLayer');
-      if (layer) layer.setColor(color);
-    });
-  });
-
-  document.getElementById('saveAnnotations').addEventListener('click', () => {
-    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
-    const saved = JSON.stringify(window.annotations || {});
-    localStorage.setItem('pdfAnnotations', saved);
-    setStatus('Annotations saved');
-  });
-
-  document.getElementById('loadAnnotations').addEventListener('click', () => {
-    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
-    const loaded = localStorage.getItem('pdfAnnotations');
-    if (loaded) {
-      try {
-        window.annotations = JSON.parse(loaded);
-        document.querySelectorAll('.annotationLayer').forEach(canvas => {
-          if (canvas.redrawAnnotations) canvas.redrawAnnotations();
-        });
-        setStatus('Annotations loaded');
-      } catch {
-        setStatus('Error loading annotations');
-      }
-    } else {
-      setStatus('No saved annotations found');
-    }
-  });
-
-  const annotateBtn = document.getElementById('annotateBtn');
-  let annotationsActive = false;
-
-  annotateBtn.addEventListener('click', () => {
-    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
-    annotationsActive = !annotationsActive;
-    annotateBtn.textContent = annotationsActive ? 'Stop' : 'Annotate';
-    setStatus(annotationsActive ? 'Annotation mode ON' : 'Annotation mode OFF');
-
-    document.querySelectorAll('.annotationLayer').forEach(canvas => {
-      canvas.style.pointerEvents = annotationsActive ? 'auto' : 'none';
-    });
-  });
-
   function addAnnotationLayer(pageDiv, pageNumber) {
     const canvas = document.createElement('canvas');
     canvas.className = 'annotationLayer';
     canvas.width = pageDiv.clientWidth || 450;
     canvas.height = pageDiv.clientHeight || 600;
-    canvas.style.position = 'absolute';
-    canvas.style.top = '0';
-    canvas.style.left = '0';
-    canvas.style.pointerEvents = 'none';
     pageDiv.appendChild(canvas);
 
     const ctx = canvas.getContext('2d');
     let drawing = false;
     let startX = 0, startY = 0;
     let tool = 'freehand';
-    let color = '#ff0000';
+    let color = '#6366f1';
     let lineWidth = 2;
 
     if (!window.annotations) window.annotations = {};
@@ -420,25 +392,37 @@ window.addEventListener('load', () => {
       });
     }
 
-    // Expose for load
     canvas.redrawAnnotations = redrawAnnotations;
 
-    canvas.addEventListener('mousedown', (e) => {
+    function getPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const touch = e.touches ? e.touches[0] : e;
+      return {
+        x: (touch.clientX - rect.left) * scaleX,
+        y: (touch.clientY - rect.top) * scaleY
+      };
+    }
+
+    function onPointerDown(e) {
       if (!annotationsActive) return;
       drawing = true;
-      startX = e.offsetX;
-      startY = e.offsetY;
+      const pos = getPos(e);
+      startX = pos.x;
+      startY = pos.y;
       if (tool === 'freehand') {
         ctx.beginPath();
         ctx.moveTo(startX, startY);
         window.currentPoints = [{ x: startX, y: startY }];
       }
-    });
+    }
 
-    canvas.addEventListener('mousemove', (e) => {
+    function onPointerMove(e) {
       if (!drawing || !annotationsActive) return;
-      const x = e.offsetX;
-      const y = e.offsetY;
+      e.preventDefault();
+      const pos = getPos(e);
+      const x = pos.x, y = pos.y;
 
       if (tool === 'freehand') {
         ctx.lineTo(x, y);
@@ -453,60 +437,103 @@ window.addEventListener('load', () => {
         ctx.fillRect(startX, startY, x - startX, y - startY);
         ctx.globalAlpha = 1;
       }
-    });
+    }
 
-    canvas.addEventListener('mouseup', (e) => {
+    function onPointerUp(e) {
       if (!annotationsActive) return;
       drawing = false;
-      const x = e.offsetX;
-      const y = e.offsetY;
+      const pos = getPos(e);
+      const x = pos.x, y = pos.y;
 
       if (tool === 'freehand') {
         window.annotations[pageNumber].push({
-          type: 'freehand',
-          color,
-          lineWidth,
-          points: window.currentPoints
+          type: 'freehand', color, lineWidth,
+          points: window.currentPoints || []
         });
         window.currentPoints = [];
       } else if (tool === 'highlight') {
         window.annotations[pageNumber].push({
-          type: 'highlight',
-          color,
-          x: Math.min(startX, x),
-          y: Math.min(startY, y),
-          width: Math.abs(x - startX),
-          height: Math.abs(y - startY)
+          type: 'highlight', color,
+          x: Math.min(startX, x), y: Math.min(startY, y),
+          width: Math.abs(x - startX), height: Math.abs(y - startY)
         });
         redrawAnnotations();
       }
-    });
+    }
 
+    canvas.addEventListener('mousedown', onPointerDown);
+    canvas.addEventListener('mousemove', onPointerMove);
+    canvas.addEventListener('mouseup', onPointerUp);
     canvas.addEventListener('mouseleave', () => {
       drawing = false;
       if (tool === 'freehand') window.currentPoints = [];
     });
 
+    canvas.addEventListener('touchstart', (e) => { onPointerDown(e); }, { passive: true });
+    canvas.addEventListener('touchmove', (e) => { onPointerMove(e); }, { passive: false });
+    canvas.addEventListener('touchend', (e) => { onPointerUp(e); }, { passive: true });
+
     canvas.setTool = (newTool) => { tool = newTool; };
     canvas.setColor = (newColor) => { color = newColor; };
-    canvas.saveAnnotations = () => { return JSON.stringify(window.annotations); };
-    canvas.loadAnnotations = (json) => {
-      window.annotations = JSON.parse(json);
-      redrawAnnotations();
-    };
   }
 
-  // --- Load PDF Button ---
-  loadBtn.addEventListener('click', () => {
-    const file = fileInput.files[0];
-    if (!file) {
-      setStatus('Please select a PDF file first.');
-      return;
-    }
-    resetState();
-    const reader = new FileReader();
-    reader.onload = (e) => loadPDF(e.target.result);
-    reader.readAsArrayBuffer(file);
+  // Annotation controls
+  toolFreehandBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    $('.page').each((_, pageDiv) => {
+      const layer = pageDiv.querySelector('.annotationLayer');
+      if (layer) layer.setTool('freehand');
+    });
+    setStatus('Freehand tool selected');
+  });
+
+  toolHighlightBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    $('.page').each((_, pageDiv) => {
+      const layer = pageDiv.querySelector('.annotationLayer');
+      if (layer) layer.setTool('highlight');
+    });
+    setStatus('Highlight tool selected');
+  });
+
+  colorPicker.addEventListener('change', (e) => {
+    if (!pdfDoc) return;
+    const color = e.target.value;
+    $('.page').each((_, pageDiv) => {
+      const layer = pageDiv.querySelector('.annotationLayer');
+      if (layer) layer.setColor(color);
+    });
+  });
+
+  saveAnnotationsBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    const saved = JSON.stringify(window.annotations || {});
+    localStorage.setItem('pdfAnnotations', saved);
+    setStatus('Annotations saved');
+  });
+
+  loadAnnotationsBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    const loaded = localStorage.getItem('pdfAnnotations');
+    if (loaded) {
+      try {
+        window.annotations = JSON.parse(loaded);
+        document.querySelectorAll('.annotationLayer').forEach(canvas => {
+          if (canvas.redrawAnnotations) canvas.redrawAnnotations();
+        });
+        setStatus('Annotations loaded');
+      } catch { setStatus('Error loading annotations'); }
+    } else { setStatus('No saved annotations found'); }
+  });
+
+  annotateBtn.addEventListener('click', () => {
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
+    annotationsActive = !annotationsActive;
+    annotateBtn.classList.toggle('active', annotationsActive);
+    setStatus(annotationsActive ? 'Annotation mode ON' : 'Annotation mode OFF');
+    document.querySelectorAll('.annotationLayer').forEach(canvas => {
+      canvas.classList.toggle('active', annotationsActive);
+    });
   });
 
   // --- Navigation ---
@@ -525,9 +552,7 @@ window.addEventListener('load', () => {
     const pageNum = parseInt(pageNumberInput.value);
     if (pageNum >= 1 && pageNum <= pdfDoc.numPages) {
       flipbook.turn('page', pageNum);
-    } else {
-      setStatus('Invalid page number.');
-    }
+    } else { setStatus('Invalid page number.'); }
   });
 
   // --- Zoom ---
@@ -548,65 +573,46 @@ window.addEventListener('load', () => {
 
   zoomInBtnEl.addEventListener('click', () => {
     if (!pdfDoc) return;
-    if (currentZoom < maxZoom) {
-      currentZoom += zoomStep;
-      applyTransform();
-      setStatus(`Zoom: ${(currentZoom * 100).toFixed(0)}%`);
-    }
+    if (currentZoom < maxZoom) { currentZoom += zoomStep; applyTransform(); setStatus(`Zoom: ${(currentZoom * 100).toFixed(0)}%`); }
   });
 
   zoomOutBtnEl.addEventListener('click', () => {
     if (!pdfDoc) return;
-    if (currentZoom > minZoom) {
-      currentZoom -= zoomStep;
-      if (currentZoom <= 1) resetPan();
-      applyTransform();
-      setStatus(`Zoom: ${(currentZoom * 100).toFixed(0)}%`);
-    }
+    if (currentZoom > minZoom) { currentZoom -= zoomStep; if (currentZoom <= 1) resetPan(); applyTransform(); setStatus(`Zoom: ${(currentZoom * 100).toFixed(0)}%`); }
   });
 
-  flipbookContainer.addEventListener('wheel', (e) => {
+  viewer.addEventListener('wheel', (e) => {
     if (!e.ctrlKey) return;
     e.preventDefault();
     if (e.deltaY < 0 && currentZoom < maxZoom) currentZoom += zoomStep;
-    else if (e.deltaY > 0 && currentZoom > minZoom) {
-      currentZoom -= zoomStep;
-      if (currentZoom <= 1) resetPan();
-    }
+    else if (e.deltaY > 0 && currentZoom > minZoom) { currentZoom -= zoomStep; if (currentZoom <= 1) resetPan(); }
     applyTransform();
     setStatus(`Zoom: ${(currentZoom * 100).toFixed(0)}%`);
-  });
+  }, { passive: false });
 
-  flipbookContainer.addEventListener('mousedown', (e) => {
+  viewer.addEventListener('mousedown', (e) => {
     if (currentZoom <= 1) return;
     isDragging = true;
-    startX = e.clientX - translateX;
-    startY = e.clientY - translateY;
-    flipbookContainer.style.cursor = 'grabbing';
+    dragStartX = e.clientX - translateX;
+    dragStartY = e.clientY - translateY;
+    viewer.style.cursor = 'grabbing';
   });
 
-  flipbookContainer.addEventListener('mousemove', (e) => {
+  viewer.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
-    translateX = e.clientX - startX;
-    translateY = e.clientY - startY;
+    translateX = e.clientX - dragStartX;
+    translateY = e.clientY - dragStartY;
     applyTransform();
   });
 
   ['mouseup', 'mouseleave'].forEach(evt =>
-    flipbookContainer.addEventListener(evt, () => {
-      isDragging = false;
-      flipbookContainer.style.cursor = 'default';
-    })
+    viewer.addEventListener(evt, () => { isDragging = false; viewer.style.cursor = ''; })
   );
 
-  // --- Touch Events for Mobile Page Swiping ---
-  let touchStartX = 0;
-  let touchStartY = 0;
-  let touchMoveX = 0;
-  let isSwiping = false;
+  // --- Touch Swipe ---
+  let touchStartX = 0, touchStartY = 0, touchMoveX = 0, isSwiping = false;
 
-  flipbookContainer.addEventListener('touchstart', (e) => {
-    // Don't intercept touch when in annotation mode
+  viewer.addEventListener('touchstart', (e) => {
     if (annotationsActive) return;
     const touch = e.touches[0];
     touchStartX = touch.clientX;
@@ -615,44 +621,32 @@ window.addEventListener('load', () => {
     isSwiping = true;
   }, { passive: true });
 
-  flipbookContainer.addEventListener('touchmove', (e) => {
+  viewer.addEventListener('touchmove', (e) => {
     if (!isSwiping) return;
-    const touch = e.touches[0];
-    touchMoveX = touch.clientX;
+    touchMoveX = e.touches[0].clientX;
   }, { passive: true });
 
-  flipbookContainer.addEventListener('touchend', (e) => {
-    if (!isSwiping) return;
+  viewer.addEventListener('touchend', () => {
+    if (!isSwiping || !pdfDoc) return;
     isSwiping = false;
-
-    if (!pdfDoc) return;
-
     const diff = touchStartX - touchMoveX;
-    const swipeThreshold = 50; // minimum swipe distance
-
-    // Swipe left = go next, swipe right = go prev
-    if (Math.abs(diff) > swipeThreshold) {
-      if (diff > 0) {
-        flipbook.turn('next');
-      } else {
-        flipbook.turn('previous');
-      }
+    if (Math.abs(diff) > 50) {
+      diff > 0 ? flipbook.turn('next') : flipbook.turn('previous');
     }
   }, { passive: true });
 
   // --- Sound ---
   toggleSoundBtn.addEventListener('click', () => {
     soundEnabled = !soundEnabled;
-    toggleSoundBtn.textContent = soundEnabled ? '🔊' : '🔇';
+    toggleSoundBtn.classList.toggle('muted', !soundEnabled);
     setStatus(soundEnabled ? 'Sound ON' : 'Sound OFF');
   });
 
   // --- Fit to Width ---
   fitWidthBtn.addEventListener('click', () => {
     if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
-    // Use actual Turn.js book dimensions, not transformed ones
     const book = flipbook.turn('size');
-    const containerWidth = flipbookContainer.getBoundingClientRect().width;
+    const containerWidth = viewer.getBoundingClientRect().width;
     const newZoom = containerWidth / book.width;
     currentZoom = Math.min(maxZoom, newZoom);
     resetPan();
@@ -664,38 +658,31 @@ window.addEventListener('load', () => {
   fitPageBtn.addEventListener('click', () => {
     if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
     const book = flipbook.turn('size');
-    const containerWidth = flipbookContainer.getBoundingClientRect().width;
-    const containerHeight = flipbookContainer.getBoundingClientRect().height;
-    const zoomX = containerWidth / book.width;
-    const zoomY = containerHeight / book.height;
+    const rect = viewer.getBoundingClientRect();
+    const zoomX = rect.width / book.width;
+    const zoomY = rect.height / book.height;
     currentZoom = Math.min(maxZoom, Math.min(zoomX, zoomY));
     resetPan();
     applyTransform();
     setStatus('Fit Page');
   });
 
-  // --- Single / Double View ---
+  // --- View Toggle ---
   toggleViewBtn.addEventListener('click', () => {
     if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
-    // On touch devices, keep single page always
-    if (isTouchDevice) {
-      setStatus('Single Page View (forced for mobile)');
-      return;
-    }
+    if (isTouchDevice) { setStatus('Single Page View'); return; }
     isSinglePage = !isSinglePage;
     flipbook.turn('display', isSinglePage ? 'single' : 'double');
-    setStatus(isSinglePage ? 'Single Page View' : 'Double Page View');
+    setStatus(isSinglePage ? 'Single Page' : 'Double Page');
   });
 
   // --- Night Mode ---
   nightModeBtn.addEventListener('click', () => {
     document.body.classList.toggle('night');
-    const active = document.body.classList.contains('night');
-    nightModeBtn.textContent = active ? '☀️' : '🌙';
-    setStatus(active ? 'Night Mode ON' : 'Day Mode ON');
+    setStatus(document.body.classList.contains('night') ? 'Night Mode ON' : 'Day Mode ON');
   });
 
-  // --- Print PDF ---
+  // --- Print ---
   printBtn.addEventListener('click', () => {
     if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
     window.print();
@@ -717,23 +704,16 @@ window.addEventListener('load', () => {
   }
 
   function enterPresentationMode() {
-    if (!pdfDoc) {
-      setStatus('Load a PDF first.');
-      return;
-    }
+    if (!pdfDoc) { setStatus('Load a PDF first.'); return; }
     isPresentationMode = true;
     document.body.classList.add('presentation-active');
     presentationOverlay.classList.remove('hidden');
-
     const currentPage = flipbook.turn('page');
     updatePresentationPage(currentPage || 1);
-
     if (document.documentElement.requestFullscreen) {
       document.documentElement.requestFullscreen().catch(() => {});
     }
-
     showPresentationUI();
-    presentationBtn.textContent = 'Exit';
     setStatus('Presentation mode ON');
   }
 
@@ -743,22 +723,15 @@ window.addEventListener('load', () => {
     presentationOverlay.classList.add('hidden');
     presentationOverlay.classList.remove('show-presentation-ui');
     clearTimeout(presentationHideTimer);
-
     if (document.fullscreenElement && document.exitFullscreen) {
       document.exitFullscreen().catch(() => {});
     }
-
-    presentationBtn.textContent = 'Present';
     setStatus('Presentation mode OFF');
   }
 
   presentationBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (isPresentationMode) {
-      exitPresentationMode();
-    } else {
-      enterPresentationMode();
-    }
+    isPresentationMode ? exitPresentationMode() : enterPresentationMode();
   });
 
   presentationPrev.addEventListener('click', (e) => {
@@ -777,11 +750,7 @@ window.addEventListener('load', () => {
   });
 
   presentationOverlay.addEventListener('click', (e) => {
-    // Don't toggle UI if clicking a button or progress
-    if (e.target.closest('.presentation-controls') ||
-        e.target.closest('.presentation-progress') ||
-        e.target.closest('.presentation-page')) return;
-
+    if (e.target.closest('.presentation-bar') || e.target.closest('.presentation-page-info')) return;
     if (presentationOverlay.classList.contains('show-presentation-ui')) {
       presentationOverlay.classList.remove('show-presentation-ui');
       clearTimeout(presentationHideTimer);
@@ -793,74 +762,49 @@ window.addEventListener('load', () => {
   // --- Keyboard Shortcuts ---
   document.addEventListener('keydown', (e) => {
     if (isPresentationMode) {
-      if (e.key === 'Escape') {
-        exitPresentationMode();
-        return;
-      }
+      if (e.key === 'Escape') { exitPresentationMode(); return; }
       if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        flipbook.turn('next');
-        showPresentationUI();
+        e.preventDefault(); flipbook.turn('next'); showPresentationUI();
       }
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        flipbook.turn('previous');
-        showPresentationUI();
+        e.preventDefault(); flipbook.turn('previous'); showPresentationUI();
       }
       if (e.key === 'f') {
-        if (document.fullscreenElement) {
-          document.exitFullscreen().catch(() => {});
-        } else if (document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen().catch(() => {});
-        }
+        if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); }
+        else if (document.documentElement.requestFullscreen) { document.documentElement.requestFullscreen().catch(() => {}); }
       }
       return;
     }
 
     if (e.target.tagName === 'INPUT') return;
-
-    if (e.key === 'ArrowRight' && pdfDoc) {
-      flipbook.turn('next');
-    }
-    if (e.key === 'ArrowLeft' && pdfDoc) {
-      flipbook.turn('previous');
-    }
-    if (e.key === 'n') {
-      nightModeBtn.click();
-    }
+    if (e.key === 'ArrowRight' && pdfDoc) flipbook.turn('next');
+    if (e.key === 'ArrowLeft' && pdfDoc) flipbook.turn('previous');
+    if (e.key === 'n') nightModeBtn.click();
   });
 
-  // Exit presentation on fullscreen exit
   document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement && isPresentationMode) {
-      exitPresentationMode();
-    }
+    if (!document.fullscreenElement && isPresentationMode) exitPresentationMode();
   });
 
-  // --- Mobile: handle orientation change ---
+  // --- Resize ---
   window.addEventListener('resize', () => {
     if (!pdfDoc || !flipbook.turn('options')) return;
-
     const vw = window.innerWidth;
     let bookWidth, bookHeight;
-
     if (isSinglePage) {
-      bookWidth = vw <= 420 ? vw - 24 : vw <= 768 ? vw - 20 : Math.min(900, vw - 200);
+      bookWidth = vw <= 420 ? vw - 24 : vw <= 768 ? vw - 20 : Math.min(900, vw - 280);
       bookHeight = Math.min(600, window.innerHeight * 0.65);
     } else {
       bookWidth = 900;
       bookHeight = 600;
     }
-
     flipbook.turn('size', bookWidth, bookHeight);
-
-    // Resize annotation canvases
     flipbook.find('.page').each((_, pageDiv) => {
       const layer = pageDiv.querySelector('.annotationLayer');
-      if (layer) {
-        layer.width = pageDiv.clientWidth;
-        layer.height = pageDiv.clientHeight;
-      }
+      if (layer) { layer.width = pageDiv.clientWidth; layer.height = pageDiv.clientHeight; }
     });
   });
+
+  // Initial status
+  setStatus('No file selected');
 });
